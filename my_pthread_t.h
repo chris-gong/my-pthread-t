@@ -19,6 +19,7 @@
 
 #include <ucontext.h>
 #include <malloc.h>
+#include <signal.h>
 #include <sys/time.h>
 
 //L: So our pthreads are just unsigned ints? I guess that means make a thread ID?
@@ -28,16 +29,22 @@ typedef uint my_pthread_t;
 typedef struct threadControlBlock
 {
   my_pthread_t tid;
+  my_pthread_t waitOn;
   unsigned int runTime = 0;
   unsigned int priority = 1;
-  ucontext_t *context;
+
+  //0 = ready to run, 1 = yielding, 2 = waiting, 3 = mutex wait
+  int status = 0;
+  ucontext_t *context = NULL;
 } tcb; 
 
 /* mutex struct definition */
 typedef struct my_pthread_mutex_t
 {
-  //L: Indicates whether mutex is currently locked
-  int lock = 0;
+  int locked;
+  int available = 1;
+  int holder = -1;
+  list* queue;
 
 } my_pthread_mutex_t;
 
