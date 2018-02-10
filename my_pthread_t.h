@@ -19,6 +19,7 @@
 
 #include <ucontext.h>
 #include <malloc.h>
+#include <signal.h>
 #include <sys/time.h>
 
 //L: So our pthreads are just unsigned ints? I guess that means make a thread ID?
@@ -29,15 +30,23 @@ typedef struct threadControlBlock
 {
   my_pthread_t tid;
   unsigned int runTime = 0;
-  unsigned int priority = 1;
-  ucontext_t *context;
+  unsigned int priority = 0;
+  unsigned int timeLeft = 0;
+
+  //0 = ready to run, 1 = yielding, 2 = waiting, 3 = mutex wait
+  int status = 0;
+  ucontext_t *context = NULL;
+  list* joinQueue = NULL;
+  void* retVal = NULL;
 } tcb; 
 
 /* mutex struct definition */
 typedef struct my_pthread_mutex_t
 {
-  //L: Indicates whether mutex is currently locked
-  int lock = 0;
+  int locked;
+  int available = 1;
+  int holder = -1;
+  list* queue;
 
 } my_pthread_mutex_t;
 
@@ -57,6 +66,10 @@ typedef struct list
 //L: queue functions
 void enqueue(list**, tcb*);
 tcb* dequeue(tcb**);
+
+//L: table functions
+void insert(list**);
+tcb* search(my_pthread_t);
 
 /* create a new thread */
 int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg);
@@ -82,4 +95,6 @@ int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex);
 /* destroy the mutex */
 int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex);
 
+/* set queues to null */
+void initializeQueues(list** runningQueue, list* waitingQueue);
 #endif
