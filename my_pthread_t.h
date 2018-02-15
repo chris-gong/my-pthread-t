@@ -8,7 +8,7 @@
 #ifndef MY_PTHREAD_T_H
 #define MY_PTHREAD_T_H
 
-#define _GNU_SOURCE+
+//#define _GNU_SOURCE+
 
 /* include lib header files that you need here: */
 #include <unistd.h>
@@ -21,6 +21,7 @@
 #include <malloc.h>
 #include <signal.h>
 #include <sys/time.h>
+#include <errno.h>
 
 //L: So our pthreads are just unsigned ints? I guess that means make a thread ID?
 typedef uint my_pthread_t;
@@ -29,21 +30,29 @@ typedef uint my_pthread_t;
 typedef struct threadControlBlock
 {
   my_pthread_t tid;
-  my_pthread_t waitOn;
-  unsigned int runTime = 0;
-  unsigned int priority = 1;
+  unsigned int priority;
 
-  //0 = ready to run, 1 = yielding, 2 = waiting, 3 = mutex wait
-  int status = 0;
-  ucontext_t *context = NULL;
-} tcb; 
+  //0 = ready to run, 1 = yielding, 2 = waiting, 3 = exiting, 4 = joining, 5 = waiting for mutex lock
+  int status;
+  void* jVal;
+  void* retVal;
+  ucontext_t *context;
+  struct list* joinQueue;
+} tcb;
+
+//L: Linked list 
+typedef struct list
+{
+  tcb* thread;
+  struct list* next;
+}list;
 
 /* mutex struct definition */
 typedef struct my_pthread_mutex_t
 {
   int locked;
-  int available = 1;
-  int holder = -1;
+  int available;
+  int holder;
   list* queue;
 
 } my_pthread_mutex_t;
@@ -52,18 +61,27 @@ typedef struct my_pthread_mutex_t
 
 // Feel free to add your own auxiliary data structures
 
-//L: Linked list 
-typedef struct list
-{
-  tcb* thread = NULL;
-  list* next = NULL;
-}list;
-
 /* Function Declarations: */
 
 //L: queue functions
 void enqueue(list**, tcb*);
-tcb* dequeue(tcb**);
+tcb* dequeue(list**);
+
+//L: linked list functions
+void l_insert(list**, tcb*);
+tcb* l_remove(list**);
+
+//L: table functions
+tcb* thread_search(my_pthread_t);
+
+//L: init functions
+void initializeQueues(list**);
+
+//L: maintenance: boost thread priorities
+void maintenance();
+
+//L: free threads that don't exit properly
+void garbage_collection();
 
 /* create a new thread */
 int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg);
