@@ -21,7 +21,6 @@
 
 tcb *currentThread, *prevThread;
 list *runningQueue[MAX_SIZE];
-list *waitingQueue;
 list *allThreads[MAX_SIZE];
 ucontext_t cleanup;
 sigset_t signal_set;
@@ -36,7 +35,7 @@ int threadCount;
 //L: Signal handler to reschedule upon VIRTUAL ALARM signal
 void scheduler(int signum)
 {
-  printf("Signaled from %d\n", currentThread->tid);
+  //printf("Signaled from %d\n", currentThread->tid);
   //Record remaining time
   getitimer(ITIMER_VIRTUAL, &currentTime);
 
@@ -54,12 +53,27 @@ void scheduler(int signum)
     exit(signum);
   }
 
+  int t;
+
   //L: Time elapsed = difference between max interval size and time remaining in timer
-  timeElapsed += (INTERVAL - currentTime.it_value.tv_usec);
+  if(INTERVAL * (currentThread->priority + 1) > (int)currentTime.it_value.tv_usec)
+  {
+    timeElapsed += ((INTERVAL * (currentThread->priority + 1)) - (int)currentTime.it_value.tv_usec);
+    t = (int)currentTime.it_value.tv_usec;
+  }
+
+  else
+  {
+    timeElapsed += (INTERVAL * (currentThread->priority + 1));
+    t = INTERVAL * (currentThread->priority + 1);
+  }
+
+  printf("Total time: %d from time remaining: %d out of %d\n", timeElapsed, (int)currentTime.it_value.tv_usec, INTERVAL * (currentThread->priority + 1));
 
   //L: check for maintenance cycle
-  if(timeElapsed >= 1000000)
+  if(timeElapsed >= 100000)
   {
+    printf("\nMAINTENANCE TRIGGERED\n\n");
     maintenance();
 
     //L: reset counter
@@ -73,12 +87,13 @@ void scheduler(int signum)
   switch(currentThread->status)
   {
     case READY: //READY signifies that the current thread is in the running queue
-      printf("%d reports READY\n", currentThread->tid);
+      //printf("%d reports READY\n", currentThread->tid);
       if(currentThread->priority < MAX_SIZE)
       {
 	currentThread->priority++;
       }
 
+      //printf("%d enqueued\n", currentThread->tid);
       enqueue(&runningQueue[currentThread->priority], currentThread);
 
       currentThread = NULL;
@@ -88,12 +103,12 @@ void scheduler(int signum)
         if (runningQueue[i] != NULL)
         { 
           currentThread = dequeue(&runningQueue[i]);
-	  printf("Dequeuing thread ID %d\n", currentThread->tid);
+	  //printf("Dequeuing thread ID %d\n", currentThread->tid);
 	  break;
         }
 	else
 	{
-	  printf("What #%d\n", i);
+	  //printf("What #%d\n", i);
 	}
       }
 
@@ -105,7 +120,7 @@ void scheduler(int signum)
       break;
    
     case YIELD: //YIELD signifies pthread yield was called; don't update priority
-      printf("%d reports YIELD\n", currentThread->tid);
+      //printf("%d reports YIELD\n", currentThread->tid);
       currentThread = NULL;
 
       for (i = 0; i < MAX_SIZE; i++) 
@@ -138,7 +153,7 @@ void scheduler(int signum)
       break;
 
     case EXIT:
-      printf("%d reports EXIT\n", currentThread->tid);
+      //printf("%d reports EXIT\n", currentThread->tid);
       prevThread = currentThread;
       currentThread = NULL;
 
@@ -146,6 +161,7 @@ void scheduler(int signum)
       {
         if (runningQueue[i] != NULL)
         {
+	  //printf("Searching... %d\n", runningQueue[i]->thread->tid);
           currentThread = dequeue(&runningQueue[i]);
           //printf("Queuing up %d\n", currentThread->tid);
 	  break;
@@ -156,7 +172,7 @@ void scheduler(int signum)
       if(currentThread == NULL)
       {
 	//L: what if other threads exist but none are in running queue?
-	printf("No other threads. Verify?\n");
+	printf("No other threads found. Exiting\n");
 	exit(EXIT_SUCCESS);
       }
 
@@ -237,7 +253,7 @@ void scheduler(int signum)
   timer.it_interval.tv_usec = 0;
   setitimer(ITIMER_VIRTUAL, &timer, NULL);
 
-  printf("Switching to TID %d\n", currentThread->tid);
+  printf("Switching to: TID %d Priority %d\n", currentThread->tid, currentThread->priority);
   //Switch to new context
   if(prevThread->tid == currentThread->tid)  
   {/*Assume switching to same context is bad. So don't do it.*/}
@@ -269,19 +285,13 @@ void maintenance()
 
   return;
 }
-/*
-//L: handle thread that finishes without calling pthread_exit
-void garbage_collection()
-{
-  my_pthread_exit(NULL);
-  return;
-}
-*/
+
+//L: handle exiting thread: supports invoked/non-invoked pthread_exit call
 void garbage_collection()
 {
   //L: Block signal here
   sigprocmask(SIG_BLOCK, &signal_set, NULL);
-  printf("Garbage Collection...\n");
+  
   if(!mainRetrieved)
   {
     exit(EXIT_SUCCESS);
@@ -339,6 +349,7 @@ void enqueue(list** q, tcb* insert)
     queue->thread = insert;
     queue->next = queue;
     *q = queue;
+    //printf("%d inserted [NULL]\n", insert->tid);
     return;
   }
 
@@ -346,8 +357,10 @@ void enqueue(list** q, tcb* insert)
   queue->next = (list*)malloc(sizeof(list));
   queue->next->thread = insert;
   queue->next->next = front;
+
   queue = queue->next;
   *q = queue;
+  //printf("%d inserted [NOT NULL]\n", insert->tid);
   return;
 }
 
@@ -361,6 +374,11 @@ tcb* dequeue(list** q)
   tcb *tgt = queue->next->thread;
   queue->next = front->next;
   free(front);
+
+  if(queue->next == queue)
+  {
+    queue = NULL;
+  }
 
   
   if(tgt == NULL)
@@ -487,6 +505,7 @@ int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*func
   l_insert(&allThreads[key], newThread);
 
   //L: store main context
+
   if (!mainRetrieved)
   {
     tcb *mainThread = (tcb*)malloc(sizeof(tcb));
@@ -508,9 +527,10 @@ int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*func
 
     currentThread = mainThread;
 
-    raise(SIGVTALRM);
+    
   }
-  
+  printf("New thread created: TID %d\n", newThread->tid);
+  raise(SIGVTALRM);
   return 0;
 };
 
@@ -523,31 +543,6 @@ int my_pthread_yield()
 };
 
 /* terminate a thread */
-/*
-void my_pthread_exit(void *value_ptr)
-{
-  //L: if main calls pthread_exit without ever calling pthread_create
-  if(!mainRetrieved)
-  {
-    exit(EXIT_SUCCESS);
-  }
-
-  tcb *jThread = NULL;
-
-  //L: dequeue all threads waiting on this one to finish
-  while(currentThread->joinQueue != NULL)
-  {
-    jThread = l_remove(currentThread->joinQueue);
-    jThread->retVal = value_ptr;
-    enqueue(runningQueue[jThread->priority], jThread);
-  }
-
-  //L: return to signal handler/scheduler
-  currentThread->status = EXIT;
-  raise(SIGVTALRM);
-};
-*/
-
 void my_pthread_exit(void *value_ptr)
 {
   //L: call garbage collection

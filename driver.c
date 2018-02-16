@@ -7,10 +7,10 @@ void* foo(void*);
 
 int main(int argc, char* argv[])
 {
-	my_pthread_t t1, t2, t3;
+	my_pthread_t t1, t2, t3, t4;
 
 	//TODO: Create and test threads here
-	printf("Hello World\n");
+	printf("[Main] Hello World\n");
 
 	int n = 1;
 
@@ -19,8 +19,10 @@ int main(int argc, char* argv[])
 	my_pthread_create(&t2, NULL, foo, (void*)&n);
 	n++;
 	my_pthread_create(&t3, NULL, foo, (void*)&n);
+	n++;
+	my_pthread_create(&t4, NULL, foo, (void*)&n);
 
-	printf("Checkpoint\n");
+	printf("\nMain Exiting\n\n");
 
 	my_pthread_exit(NULL);
 
@@ -30,7 +32,13 @@ int main(int argc, char* argv[])
 void* foo(void* param)
 {
 	int i = *(int*)param;
-	printf("Hello From %d\n", i);
+	printf("\nHello From Thread %d\n\n", i);
+
+	unsigned int n;
+	for(n = 0; n < 0xffffffff; n++)
+	{}
+
+	printf("\nThread %d exiting\n\n", i);
 
 	my_pthread_exit(NULL);
 	return NULL;
