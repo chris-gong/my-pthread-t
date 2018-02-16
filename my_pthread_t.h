@@ -16,7 +16,7 @@
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
-
+#include <string.h>
 #include <ucontext.h>
 #include <malloc.h>
 #include <signal.h>
@@ -25,6 +25,8 @@
 
 //L: So our pthreads are just unsigned ints? I guess that means make a thread ID?
 typedef uint my_pthread_t;
+
+typedef struct sigaction mySig;
 
 //L: struct to store thread attributes
 typedef struct threadControlBlock
