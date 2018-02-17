@@ -16,8 +16,8 @@
 //TODO: combine JOIN and MUTEX cases; they're handled the same way
 #define JOIN 4
 #define MUTEX_WAIT 5
-#define MAX_SIZE 60
-#define INTERVAL 20
+#define MAX_SIZE 15
+#define INTERVAL 20000
 
 tcb *currentThread, *prevThread;
 list *runningQueue[MAX_SIZE];
@@ -44,13 +44,13 @@ void scheduler(int signum)
   }
 
 
-  //AT THIS POINT THE CURRENT THREAD IS NOT IN THE SCHEDULER (running queue, but it's always in allthreads)
-  printf("\n[Thread %d] Signaled from %d, time left %i\n", currentThread->tid,currentThread->tid, (int)currentTime.it_value.tv_usec);
   //Record remaining time
   getitimer(ITIMER_VIRTUAL, &currentTime);
 
 
-
+  //AT THIS POINT THE CURRENT THREAD IS NOT IN THE SCHEDULER (running queue, but it's always in allthreads)
+  //once the timer finishes, the value of it_value.tv_usec will reset to the interval time (note this was when we set it_interval only)
+  printf("\n[Thread %d] Signaled from %d, time left %i\n", currentThread->tid,currentThread->tid, (int)currentTime.it_value.tv_usec);
 
   //L: disable timer if still active
   timer.it_value.tv_sec = 0;
@@ -66,24 +66,44 @@ void scheduler(int signum)
     exit(signum);
   }
 
-  int t;
 
   //L: Time elapsed = difference between max interval size and time remaining in timer
   //if the time splice runs to completion the else body goes,
   //else the if body goes, and the actual amount of time that passed is added to timeelapsed
-  int timeSpent = ((INTERVAL * (currentThread->priority + 1)) - (int)currentTime.it_value.tv_usec);
-  if(timeSpent < 0)
+  int timeSpent = (int)currentTime.it_value.tv_usec;
+  int expectedInterval = INTERVAL * (currentThread->priority + 1);
+  printf("timeSpent: %i, expectedInterval: %i\n", timeSpent, expectedInterval);
+  if(timeSpent < 0 || timeSpent > expectedInterval)
   {
     timeSpent = 0;
   }
- 
-  timeElapsed += timeSpent;
-  t = (int)currentTime.it_value.tv_usec; //time remaining on the timer
+  else
+  {
+    timeSpent = expectedInterval - timeSpent;
+  }
+  /*if (timeSpent >= expectedInterval) 
+  {
+    printf("timer ran to completion\n");
+    timeSpent = expectedInterval;
+  }
+  else if (timeSpent < 0)
+  {
+    printf("itimerval glitch\n");
+    timeSpent = 0;
+  }
+  else
+  {
+    printf("timer did not run to completion\n");
+    timeSpent = expectedInterval - timeSpent;
+  }*/
 
-  printf("[Thread %d] Total time: %d from time remaining: %d out of %d\n", currentThread->tid, timeElapsed, (int)currentTime.it_value.tv_usec, INTERVAL * (currentThread->priority + 1));
+  
+  timeElapsed += timeSpent;
+  printf("total time spend so far before maintenance cycle %i and the amount of time spent just now %i\n", timeElapsed, timeSpent);
+  //printf("[Thread %d] Total time: %d from time remaining: %d out of %d\n", currentThread->tid, timeElapsed, (int)currentTime.it_value.tv_usec, INTERVAL * (currentThread->priority + 1));
 
   //L: check for maintenance cycle
-  if(timeElapsed >= 100000)
+  if(timeElapsed >= 10000000)
   {
     printf("\n[Thread %d] MAINTENANCE TRIGGERED\n\n",currentThread->tid);
     maintenance();
@@ -100,13 +120,14 @@ void scheduler(int signum)
   {
     case READY: //READY signifies that the current thread is in the running queue
       //printf("%d reports READY\n", currentThread->tid);
-      printf("[Thread %i] Ready state entered", currentThread->tid);
+      //printf("[Thread %i] Ready state entered", currentThread->tid);
       if(currentThread->priority < MAX_SIZE - 1)
       {
 	currentThread->priority++;
       }
 
       //printf("%d enqueued\n", currentThread->tid);
+      //put back the thread that just finished back into the running queue
       enqueue(&runningQueue[currentThread->priority], currentThread);
 
       currentThread = NULL;
@@ -115,6 +136,7 @@ void scheduler(int signum)
       {
         if (runningQueue[i] != NULL)
         { 
+          //getting a new thread to run
           currentThread = dequeue(&runningQueue[i]);
 	  //printf("Dequeuing thread ID %d\n", currentThread->tid);
 	  break;
@@ -187,7 +209,7 @@ void scheduler(int signum)
 	printf("No other threads found. Exiting\n");
 	exit(EXIT_SUCCESS);
       }
-      printf("[Thread %d] in exit, currentThread is %i with priority %d\n", prevThread->tid, currentThread->tid, currentThread->priority);
+      //printf("[Thread %d] in exit, currentThread is %i with priority %d\n", prevThread->tid, currentThread->tid, currentThread->priority);
       //L: free the thread control block and ucontext
       free(prevThread->context->uc_stack.ss_sp);
       free(prevThread->context);
@@ -195,13 +217,15 @@ void scheduler(int signum)
 
       currentThread->status = READY;
 
+      printf("Switching to: TID %d Priority %d\n", currentThread->tid, currentThread->priority);
+
       //L: reset timer
       timer.it_value.tv_sec = 0;
       timer.it_value.tv_usec = INTERVAL * (currentThread->priority + 1);
       timer.it_interval.tv_sec = 0;
-      timer.it_interval.tv_usec = INTERVAL * (currentThread->priority + 1);
+      timer.it_interval.tv_usec = 0;
       int ret = setitimer(ITIMER_VIRTUAL, &timer, NULL);
-      printf("$$$$$$$$$$$$$$$$$$$$$ RET: %d $$$$$$$$$$$$$$$$$$$$$\n",ret);
+      //printf("$$$$$$$$$$$$$$$$$$$$$ RET: %d $$$$$$$$$$$$$$$$$$$$$\n",ret);
       if (ret < 0)
       {
         printf("crap\n");
@@ -213,9 +237,9 @@ void scheduler(int signum)
 
     case JOIN: //JOIN corresponds with a call to pthread_join
 
-      prevThread = currentThread;
       currentThread = NULL;
-
+      //notice how we don't enqueue the thread that just finished back into the running queue
+      //we just go straight to getting another thread
       for (i = 0; i < MAX_SIZE; i++) 
       {
         if (runningQueue[i] != NULL)
@@ -236,7 +260,6 @@ void scheduler(int signum)
     case MUTEX_WAIT: //MUTEX_WAIT corresponds with a thread waiting for a mutex lock
 
       //L: Don't add current to queue: already in mutex queue
-      prevThread = currentThread;
       currentThread = NULL;
 
       for (i = 0; i < MAX_SIZE; i++) 
@@ -251,6 +274,7 @@ void scheduler(int signum)
       if(currentThread == NULL)
       {
         /*TODO: OH SHIT DEADLOCK*/
+        printf("DEADLOCK\n");
 	exit(EXIT_FAILURE);
       }
 
@@ -266,11 +290,11 @@ void scheduler(int signum)
 
   //L: reset timer to 25ms times thread priority
   timer.it_value.tv_sec = 0;
-  timer.it_value.tv_usec = INTERVAL * (currentThread->priority + 1);
+  timer.it_value.tv_usec = INTERVAL * (currentThread->priority + 1) ;
   timer.it_interval.tv_sec = 0;
-  timer.it_interval.tv_usec = INTERVAL * (currentThread->priority + 1);
+  timer.it_interval.tv_usec = 0;
   int ret = setitimer(ITIMER_VIRTUAL, &timer, NULL);
-  printf("$$$$$$$$$$$$$$$$$$$$$ RET: %d $$$$$$$$$$$$$$$$$$$$$\n",ret);
+
   if (ret < 0)
   {
      printf("crap\n");
@@ -291,7 +315,29 @@ void scheduler(int signum)
 void maintenance()
 {
   int i;
+  //list *temp;
   tcb *tgt;
+  /*
+  for(i = 0; i < MAX_SIZE; i++)
+  {
+    //L: need this first loop because not all threads are stored in running queue
+    temp = allThreads[i];
+    while(allThreads[i] != NULL)
+    {
+      allThreads[i]->thread->priority = 0;
+      allThreads[i] = allThreads[i]->next;
+    }
+    allThreads[i] = temp;
+
+    //TODO: fix redundancy of dequeuing from highest priority level
+    while(runningQueue[i] != NULL)
+    {
+      tgt = dequeue(&runningQueue[i]);
+      enqueue(&runningQueue[0], tgt);
+    }
+
+  }*/
+
 
   for(i = 1; i < MAX_SIZE; i++)
   {
@@ -300,7 +346,6 @@ void maintenance()
       tgt = dequeue(&runningQueue[i]);
       tgt->priority = 0;
       enqueue(&runningQueue[0], tgt);
-      printf("Enqueued TID %d\n", tgt->tid);
     }
   }
 
@@ -311,7 +356,6 @@ void maintenance()
 void garbage_collection()
 {
   //L: Block signal here
-  printf("[Thread: %d] garbage collection entered \n",currentThread->tid);
 
   //sigprocmask(SIG_BLOCK, &signal_set, NULL);
   notFinished = 1;
@@ -364,7 +408,6 @@ void garbage_collection()
   //sigprocmask(SIG_UNBLOCK, &signal_set, NULL);
   notFinished = 0;
 
-  printf("[Thread: %d] after garbage unblock\n",currentThread->tid);
   raise(SIGVTALRM);
 }
 
@@ -379,7 +422,6 @@ void enqueue(list** q, tcb* insert)
     queue->thread = insert;
     queue->next = queue;
     *q = queue;
-    //printf("%d inserted [NULL]\n", insert->tid);
     return;
   }
 
@@ -390,7 +432,6 @@ void enqueue(list** q, tcb* insert)
 
   queue = queue->next;
   *q = queue;
-  //printf("%d inserted [NOT NULL]\n", insert->tid);
   return;
 }
 
@@ -492,6 +533,47 @@ tcb* thread_search(my_pthread_t tid)
   return ret;
 }
 
+void initializeMainContext()
+{
+  tcb *mainThread = (tcb*)malloc(sizeof(tcb));
+  ucontext_t *mText = (ucontext_t*)malloc(sizeof(ucontext_t));
+  getcontext(mText);
+  mText->uc_link = &cleanup;
+
+  mainThread->context = mText;
+  mainThread->tid = 0;
+  mainThread->priority = 0;
+  mainThread->joinQueue = NULL;
+  mainThread->jVal = NULL;
+  mainThread->retVal = NULL;
+  mainThread->status = READY;
+
+  mainRetrieved = 1;
+
+  l_insert(&allThreads[0], mainThread);
+
+  currentThread = mainThread;
+}
+
+void initializeGarbageContext()
+{
+  memset(&sig,0,sizeof(mySig));
+  sig.sa_handler = &scheduler;
+  sigaction(SIGVTALRM, &sig,NULL);
+  initializeQueues(runningQueue); //set everything to NULL
+    
+  //Initialize garbage collector
+  getcontext(&cleanup);
+  cleanup.uc_link = NULL;
+  cleanup.uc_stack.ss_sp = malloc(STACK_S);
+  cleanup.uc_stack.ss_size = STACK_S;
+  cleanup.uc_stack.ss_flags = 0;
+  makecontext(&cleanup, (void*)&garbage_collection, 0);
+
+  //L: set thread count
+  threadCount = 1;
+}
+
 /* create a new thread */
 int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg)
 {
@@ -499,36 +581,11 @@ int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*func
 
   if(!mainRetrieved)
   {
-    memset(&sig,0,sizeof(mySig));
-    sig.sa_handler = &scheduler;
-    int val = sigaction(SIGVTALRM, &sig,NULL);
-    printf("&&&&&&&&&: %d\n",val);
-    initializeQueues(runningQueue); //set everything to NULL
-    
-    //Initialize garbage collector
-    getcontext(&cleanup);
-    cleanup.uc_link = NULL;
-    cleanup.uc_stack.ss_sp = malloc(STACK_S);
-    cleanup.uc_stack.ss_size = STACK_S;
-    cleanup.uc_stack.ss_flags = 0;
-    makecontext(&cleanup, (void*)&garbage_collection, 0);
-
-    //L: intialize signal blocker
-    sigemptyset(&signal_set);
-    sigaddset(&signal_set, SIGVTALRM);
-
-    //L: set thread count
-    threadCount = 1;
-
-    //L: initialize not finished
-    notFinished = 0;
+    initializeGarbageContext();
   }
-  printf("[Thread ?] before sigblock\n");
 
-  //////////////////////////////////////////////////////////////sigprocmask(SIG_BLOCK, &signal_set, NULL);
   notFinished = 1;
 
-  printf("sigblock\n");
   //L: Create a thread context to add to scheduler
   ucontext_t* task = (ucontext_t*)malloc(sizeof(ucontext_t));
   getcontext(task);
@@ -553,34 +610,15 @@ int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*func
   enqueue(&runningQueue[0], newThread);
   int key = newThread->tid % MAX_SIZE;
   l_insert(&allThreads[key], newThread);
-  printf("[Thread? %d] before unsigblock\n", newThread->tid);
 
-  ///////////////////////////////////////////////////////////////sigprocmask(SIG_UNBLOCK, &signal_set, NULL);
   notFinished = 0;
 
-  printf("sigunblock\n");
   //L: store main context
 
   if (!mainRetrieved)
   {
-    tcb *mainThread = (tcb*)malloc(sizeof(tcb));
-    ucontext_t *mText = (ucontext_t*)malloc(sizeof(ucontext_t));
-    getcontext(mText);
-    mText->uc_link = &cleanup;
+    initializeMainContext();
 
-    mainThread->context = mText;
-    mainThread->tid = 0;
-    mainThread->priority = 0;
-    mainThread->joinQueue = NULL;
-    mainThread->jVal = NULL;
-    mainThread->retVal = NULL;
-    mainThread->status = READY;
-
-    mainRetrieved = 1;
-
-    l_insert(&allThreads[0], mainThread);
-
-    currentThread = mainThread;
     //sigprocmask(SIG_UNBLOCK, &signal_set, NULL);
     raise(SIGVTALRM);
   }
@@ -593,6 +631,11 @@ int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*func
 /* give CPU pocession to other user level threads voluntarily */
 int my_pthread_yield()
 {
+  if(!mainRetrieved)
+  {
+    initializeGarbageContext();
+    initializeMainContext();
+  }
   //L: return to signal handler/scheduler
   currentThread->status = YIELD;
   return raise(SIGVTALRM);
@@ -601,8 +644,11 @@ int my_pthread_yield()
 /* terminate a thread */
 void my_pthread_exit(void *value_ptr)
 {
-  printf("time left %i\n with priority %d",(int)currentTime.it_value.tv_usec, currentThread->priority);
-  printf("after exit block");
+  if(!mainRetrieved)
+  {
+    initializeGarbageContext();
+    initializeMainContext();
+  }
   //L: call garbage collection
   currentThread->jVal = value_ptr;
   setcontext(&cleanup);
@@ -611,6 +657,13 @@ void my_pthread_exit(void *value_ptr)
 /* wait for thread termination */
 int my_pthread_join(my_pthread_t thread, void **value_ptr)
 {
+  printf("\n pthread_join has been entered \n");
+  if(!mainRetrieved)
+  {
+    initializeGarbageContext();
+    initializeMainContext();
+  }
+  notFinished = 1;
   //L: make sure thread can't wait on self
   if(thread == currentThread->tid)
   {return -1;}
@@ -619,13 +672,14 @@ int my_pthread_join(my_pthread_t thread, void **value_ptr)
   
   if(tgt == NULL)
   {
-    return ESRCH; //L: sets errno to "no matching process ID found"
+    return -1; //L: sets errno to "no matching process ID found"
   }
   
   l_insert(&tgt->joinQueue, currentThread);
 
   currentThread->status = JOIN;
 
+  notFinished = 0;
   raise(SIGVTALRM);
 
   *value_ptr = currentThread->retVal;
@@ -637,70 +691,102 @@ int my_pthread_join(my_pthread_t thread, void **value_ptr)
 int my_pthread_mutex_init(my_pthread_mutex_t *mutex, const pthread_mutexattr_t *mutexattr)
 {
   //L: TODO: Undefined behavior if init called on locked mutex
-
+  notFinished = 1;
   my_pthread_mutex_t m = *mutex;
   
   m.available = 1;
   m.locked = 0;
-  m.holder = -1;
+  m.holder = -1; //holder represents the tid of the thread that is currently holding the mutex
   m.queue = NULL;
 
   *mutex = m;
+  notFinished = 0;
   return 0;
 };
 
 /* aquire the mutex lock */
 int my_pthread_mutex_lock(my_pthread_mutex_t *mutex)
 {
-  my_pthread_mutex_t m = *mutex;
-
-  if(!m.available)
-  {return -1;}
-
-  while(m.locked)
+  if(!mainRetrieved)
   {
-    enqueue(&m.queue, currentThread);
+    initializeGarbageContext();
+    initializeMainContext();
+  }
+  notFinished = 1;
+  //my_pthread_mutex_t m = *mutex;
+  //TODO: check if mutex has initialized
+
+  //TODO: Atomic Instructions
+
+  //FOR NOW ASSUME MUTEX WAS INITIALIZED
+  if(!mutex->available)
+  {return -1;}
+  //__atomic_test_and_set((volatile void *)&mutex->locked,__ATOMIC_RELAXED)
+  //printf("notFinished in mutex lock: %i\n", notFinished);
+  while(__atomic_test_and_set((volatile void *)&mutex->locked,__ATOMIC_RELAXED))
+  {
+    //the reason why we reset notFinished to one here is that when coming back
+    //from a swapcontext, notFinished may be zero and we can't let the operations
+    //in the loop be interrupted
+    notFinished = 1;
+    printf("notFinished in mutex lock: %i\n", notFinished);
+    //printf("\n[%d] WAITING FOR LOCK\n\n", currentThread->tid);
+    enqueue(&mutex->queue, currentThread);
     currentThread->status = MUTEX_WAIT;
+    //we need to set notFinished to zero before going to scheduler
+    notFinished = 0;
     raise(SIGVTALRM);
   }
 
-  m.locked = 1;
-  m.holder = currentThread->tid;
-  *mutex = m;
+  printf("NOW LOCKING\n");
 
+  //mutex->locked = 1;
+  mutex->holder = currentThread->tid;
+  //*mutex = m;
+  
+  notFinished = 0;
   return 0;
 };
 
 /* release the mutex lock */
 int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex)
 {
+  if(!mainRetrieved)
+  {
+    initializeGarbageContext();
+    initializeMainContext();
+  }
   //NOTE: handle errors: unlocking an open mutex, unlocking mutex not owned by calling thread, or accessing unitialized mutex
 
-  my_pthread_mutex_t m = *mutex;
+  notFinished = 1;
 
-  if(!m.available || !m.locked || m.holder != currentThread->tid)
+  printf("NOW UNLOCKING\n");
+  //ASSUMING mutex->available will be initialized to 0 by default without calling init
+  //available in this case means that mutex has been initialized or destroyed (state variable)
+  if(!mutex->available || !mutex->locked || mutex->holder != currentThread->tid)
   {return -1;}
 
-  m.locked = 0;
-  m.holder = -1;
+  mutex->locked = 0;
+  mutex->holder = -1;
 
-  tcb* muThread = dequeue(&m.queue);
-
+  tcb* muThread = dequeue(&mutex->queue);
+  
   if(muThread != NULL)
   {enqueue(&runningQueue[muThread->priority], muThread);}
 
-  *mutex = m;
+  notFinished = 0;
+
   return 0;
 };
 
 /* destroy the mutex */
 int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex)
 {
+  notFinished = 1;
   my_pthread_mutex_t m = *mutex;
-  sigprocmask(SIG_BLOCK, &signal_set, NULL);
   //L: prevent threads from accessing while mutex is in destruction process
   m.available = 0;
-  sigprocmask(SIG_UNBLOCK, &signal_set, NULL);  
+  notFinished = 0;
 
   //L: if mutex still locked, wait for thread to release lock
   while(m.locked)
@@ -708,11 +794,12 @@ int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex)
 
   //L: TODO: Is implementing a free-for-all post-destruction a terrible idea? This requires research...
   tcb *muThread;
+  //only works because we set queue to a static pointer (hopefully...)
   while(m.queue != NULL)
   {
+    printf("\n we're in a loop in mutex destroy \n");
     muThread = dequeue(&m.queue);
     enqueue(&runningQueue[muThread->priority], muThread);
-    m.queue = m.queue->next;
   }
 
   *mutex = m;

@@ -8,7 +8,7 @@
 #ifndef MY_PTHREAD_T_H
 #define MY_PTHREAD_T_H
 
-//#define _GNU_SOURCE+
+#define _GNU_SOURCE
 
 /* include lib header files that you need here: */
 #include <unistd.h>
@@ -55,6 +55,7 @@ typedef struct my_pthread_mutex_t
   int locked;
   int available;
   int holder;
+  int initialized;
   list* queue;
 
 } my_pthread_mutex_t;
@@ -109,4 +110,7 @@ int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex);
 /* destroy the mutex */
 int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex);
 
+void initializeMainContext();
+
+void initializeGarbageContext();
 #endif
