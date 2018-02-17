@@ -86,6 +86,10 @@ void maintenance();
 //L: free threads that don't exit properly
 void garbage_collection();
 
+//L: table functions
+void insert(list**);
+tcb* search(my_pthread_t);
+
 /* create a new thread */
 int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg);
 

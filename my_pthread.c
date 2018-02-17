@@ -13,6 +13,7 @@
 #define YIELD 1
 #define WAIT 2
 #define EXIT 3
+
 //TODO: combine JOIN and MUTEX cases; they're handled the same way
 #define JOIN 4
 #define MUTEX_WAIT 5
@@ -111,6 +112,12 @@ void scheduler(int signum)
     //L: reset counter
     timeElapsed = 0;
   }
+	
+  currentThread->status = READY;
+  currentThread->runTime = 0;  
+
+  //TODO: set timeleft based on priority level, for now it's fixed
+  //spliceTime = 25000;
 
   prevThread = currentThread;
   
@@ -585,9 +592,9 @@ int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*func
   }
 
   notFinished = 1;
-
   //L: Create a thread context to add to scheduler
   ucontext_t* task = (ucontext_t*)malloc(sizeof(ucontext_t));
+  
   getcontext(task);
   task->uc_link = &cleanup;
   task->uc_stack.ss_sp = malloc(STACK_S);
@@ -623,7 +630,6 @@ int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*func
     raise(SIGVTALRM);
   }
   printf("New thread created: TID %d\n", newThread->tid);
-  
   
   return 0;
 };
@@ -681,7 +687,6 @@ int my_pthread_join(my_pthread_t thread, void **value_ptr)
 
   notFinished = 0;
   raise(SIGVTALRM);
-
   *value_ptr = currentThread->retVal;
 
   return 0;
