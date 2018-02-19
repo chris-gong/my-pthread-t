@@ -16,7 +16,7 @@
 #define JOIN 4
 #define MUTEX_WAIT 5
 #define MAX_SIZE 15
-#define INTERVAL 20
+#define INTERVAL 20000
 
 tcb *currentThread, *prevThread;
 list *runningQueue[MAX_SIZE];
@@ -206,7 +206,7 @@ void scheduler(int signum)
       int ret = setitimer(ITIMER_VIRTUAL, &timer, NULL);
       if (ret < 0)
       {
-        printf("crap\n");
+        printf("Timer Reset Failed. Exiting...\n");
         exit(0);
       }
       setcontext(currentThread->context);
@@ -252,7 +252,7 @@ void scheduler(int signum)
       if(currentThread == NULL)
       {
         /*TODO: OH SHIT DEADLOCK*/
-        printf("DEADLOCK\n");
+        printf("DEADLOCK DETECTED\n");
 	exit(EXIT_FAILURE);
       }
 
@@ -275,7 +275,7 @@ void scheduler(int signum)
 
   if (ret < 0)
   {
-     printf("crap\n");
+     printf("Timer Reset Failure. Exiting...\n");
      exit(0);
   }
 
@@ -297,7 +297,7 @@ void maintenance()
 
 
   //L: template for priority inversion
-  for(i = MAX_SIZE/2; i < MAX_SIZE; i++)
+  for(i = 1; i < MAX_SIZE; i++)
   {
     while(runningQueue[i] != NULL)
     {
@@ -626,9 +626,12 @@ int my_pthread_join(my_pthread_t thread, void **value_ptr)
   
   if(tgt == NULL)
   {
-    return -1; //L: sets errno to "no matching process ID found"
+    return -1;
   }
   
+  //Priority Inversion Case
+  tgt->priority = 0;
+
   l_insert(&tgt->joinQueue, currentThread);
 
   currentThread->status = JOIN;
@@ -694,7 +697,8 @@ int my_pthread_mutex_lock(my_pthread_mutex_t *mutex)
     return -1;
   }
 
-
+  //Priority Inversion Case
+  currentThread->priority = 0;
   mutex->holder = currentThread->tid;
   
   notFinished = 0;
@@ -724,7 +728,11 @@ int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex)
   tcb* muThread = dequeue(&mutex->queue);
   
   if(muThread != NULL)
-  {enqueue(&runningQueue[muThread->priority], muThread);}
+  {
+    //Priority Inversion Case
+    muThread->priority = 0;
+    enqueue(&runningQueue[0], muThread);
+  }
 
   notFinished = 0;
 
@@ -744,9 +752,8 @@ int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex)
   while(m.locked)
   {raise(SIGVTALRM);}
 
-  //L: TODO: Is implementing a free-for-all post-destruction a terrible idea? This requires research...
+  //L: TODO: Undefined behavior if mutex queue isn't empty when being destroyed
   tcb *muThread;
-  //only works because we set queue to a static pointer (hopefully...)
   while(m.queue != NULL)
   {
     muThread = dequeue(&m.queue);
