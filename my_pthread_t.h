@@ -2,11 +2,20 @@
 // Author:	Yujie REN
 // Date:	09/23/2017
 
-// name: Lance Fletcher
+// name: Lance Fletcher, Jeremy Banks (jpb231), Christopher Gong
 // username of iLab: laf224
 // iLab Server: composite.cs.rutgers.edu
 #ifndef MY_PTHREAD_T_H
 #define MY_PTHREAD_T_H
+
+#define pthread_create(a, b, c, d) my_pthread_create(a, b, c, d)
+#define pthread_yield() my_pthread_yield()
+#define pthread_exit(a) my_pthread_exit(a)
+#define pthread_join(a, b) my_pthread_join(a, b)
+#define pthread_mutex_init(a, b) my_pthread_mutex_init(a, b)
+#define pthread_mutex_lock(a) my_pthread_mutex_lock(a)
+#define pthread_mutex_unlock(a) my_pthread_mutex_unlock(a)
+#define pthread_mutex_destroy(a) my_pthread_mutex_destroy(a)
 
 #define _GNU_SOURCE
 
@@ -25,6 +34,7 @@
 
 //L: So our pthreads are just unsigned ints? I guess that means make a thread ID?
 typedef uint my_pthread_t;
+#define pthread_t my_pthread_t
 
 typedef struct sigaction mySig;
 
@@ -59,6 +69,7 @@ typedef struct my_pthread_mutex_t
   list* queue;
 
 } my_pthread_mutex_t;
+#define pthread_mutex_t my_pthread_mutex_t
 
 /* define your data structures here: */
 
@@ -85,10 +96,6 @@ void maintenance();
 
 //L: free threads that don't exit properly
 void garbage_collection();
-
-//L: table functions
-void insert(list**);
-tcb* search(my_pthread_t);
 
 /* create a new thread */
 int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg);
@@ -118,3 +125,4 @@ void initializeMainContext();
 
 void initializeGarbageContext();
 #endif
+
