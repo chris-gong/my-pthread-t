@@ -307,6 +307,9 @@ void maintenance()
     }
   }
 
+  currentThread->priority = 0;
+  enqueue(&runningQueue[0], currentThread);
+
   return;
 }
 
@@ -633,6 +636,8 @@ int my_pthread_join(my_pthread_t thread, void **value_ptr)
     return -1; //L: sets errno to "no matching process ID found"
   }  
 
+  tgt->priority = 0;
+
   l_insert(&tgt->joinQueue, currentThread);
 
   currentThread->status = JOIN;
@@ -645,7 +650,7 @@ int my_pthread_join(my_pthread_t thread, void **value_ptr)
   *value_ptr = currentThread->retVal;
 
   notFinished = 1;
-  enqueue(&runningQueue[0], tgt);
+  enqueue(&runningQueue[tgt->priority], tgt);
   notFinished = 0;
 
   return 0;
@@ -731,7 +736,10 @@ int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex)
   tcb* muThread = dequeue(&mutex->queue);
   
   if(muThread != NULL)
-  {enqueue(&runningQueue[0], muThread);}
+  {
+    muThread->priority = 0;
+    enqueue(&runningQueue[muThread->priority], muThread);
+  }
 
   notFinished = 0;
 
