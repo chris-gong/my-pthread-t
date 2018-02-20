@@ -1,7 +1,3 @@
-// File:	my_pthread.c
-// Author:	Yujie REN
-// Date:	09/23/2017
-
 // name: Lance Fletcher, Jeremy Banks, Christopher Gong
 // username of iLab: laf224
 // iLab Server: composite.cs.rutgers.edu
@@ -16,7 +12,7 @@
 #define JOIN 4
 #define MUTEX_WAIT 5
 #define MAX_SIZE 15
-#define INTERVAL 20
+#define INTERVAL 25000
 
 tcb *currentThread, *prevThread;
 list *runningQueue[MAX_SIZE];
@@ -297,7 +293,7 @@ void maintenance()
 
 
   //L: template for priority inversion
-  for(i = MAX_SIZE/2; i < MAX_SIZE; i++)
+  for(i = 1; i < MAX_SIZE; i++)
   {
     while(runningQueue[i] != NULL)
     {
@@ -648,10 +644,6 @@ int my_pthread_join(my_pthread_t thread, void **value_ptr)
   {return 0;}
 
   *value_ptr = currentThread->retVal;
-
-  notFinished = 1;
-  enqueue(&runningQueue[tgt->priority], tgt);
-  notFinished = 0;
 
   return 0;
 };
