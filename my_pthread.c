@@ -61,7 +61,7 @@ void scheduler(int signum)
   if(signum != SIGVTALRM)
   {
     /*TODO: PANIC*/
-    printf("[Thread %d] Signal Received: %d.\nExiting...\n", currentThread->tid, signum);
+    //printf("[Thread %d] Signal Received: %d.\nExiting...\n", currentThread->tid, signum);
     exit(signum);
   }
 
@@ -206,7 +206,7 @@ void scheduler(int signum)
       int ret = setitimer(ITIMER_VIRTUAL, &timer, NULL);
       if (ret < 0)
       {
-        printf("Timer Reset Failed. Exiting...\n");
+        //printf("Timer Reset Failed. Exiting...\n");
         exit(0);
       }
       setcontext(currentThread->context);
@@ -252,14 +252,14 @@ void scheduler(int signum)
       if(currentThread == NULL)
       {
         /*TODO: OH SHIT DEADLOCK*/
-        printf("DEADLOCK DETECTED\n");
+        //printf("DEADLOCK DETECTED\n");
 	exit(EXIT_FAILURE);
       }
 
       break;
 
     default:
-      printf("Thread Status Error: %d\n", currentThread->status);
+      //printf("Thread Status Error: %d\n", currentThread->status);
       exit(-1);
       break;
   }
@@ -275,7 +275,7 @@ void scheduler(int signum)
 
   if (ret < 0)
   {
-     printf("Timer Reset Failure. Exiting...\n");
+     //printf("Timer Reset Failure. Exiting...\n");
      exit(0);
   }
 
